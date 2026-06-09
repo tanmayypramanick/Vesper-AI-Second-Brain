@@ -2,14 +2,14 @@
 
 <br>
 
-```
+<pre align="center">
  ██╗   ██╗███████╗███████╗██████╗ ███████╗██████╗
  ██║   ██║██╔════╝██╔════╝██╔══██╗██╔════╝██╔══██╗
  ██║   ██║█████╗  ███████╗██████╔╝█████╗  ██████╔╝
  ╚██╗ ██╔╝██╔══╝  ╚════██║██╔═══╝ ██╔══╝  ██╔══██╗
   ╚████╔╝ ███████╗███████║██║     ███████╗██║  ██║
    ╚═══╝  ╚══════╝╚══════╝╚═╝     ╚══════╝╚═╝  ╚═╝
-```
+</pre>
 ### *A personal AI that actually knows your life.*
 
 Ingests your messages, emails, calendar, screen activity, and contacts into a local vector database.  
