@@ -1173,12 +1173,17 @@ function openOv(type){
         `<div class="mc"><div class="mc-ico">${c.i}</div><div class="mc-n">${Math.floor(n*c.p).toLocaleString()}</div><div class="mc-l">${c.n}</div></div>`).join('');
     }).catch(()=>{document.getElementById('ov-mn').textContent='—';});
   }else if(type==='system'){
-    body.innerHTML=`<div class="res-grid" id="ov-rg"></div>
-      <button class="abtn" onclick="loadSysOv()" style="margin-top:4px">Refresh</button>`;
+    body.innerHTML=`<div class="res-grid" id="ov-rg"></div>`;
     loadSysOv();
+    // auto-refresh every 3s while system panel is open
+    if(window._sysIv)clearInterval(window._sysIv);
+    window._sysIv=setInterval(()=>{if(document.getElementById('ov-rg'))loadSysOv();else{clearInterval(window._sysIv);window._sysIv=null;}},3000);
   }
 }
-function closeOv(){document.getElementById('ov').classList.remove('on');}
+function closeOv(){
+  document.getElementById('ov').classList.remove('on');
+  if(window._sysIv){clearInterval(window._sysIv);window._sysIv=null;}
+}
 async function loadSysOv(){
   const el=document.getElementById('ov-rg');if(!el)return;
   try{
@@ -1186,20 +1191,32 @@ async function loadSysOv(){
       fetch(`${VESPER}/health`,{signal:AbortSignal.timeout(5000)}).then(r=>r.json()),
       fetch(`${VESPER}/system_stats`,{signal:AbortSignal.timeout(6000)}).then(r=>r.json()),
     ]);
+    const memGB=((s.mem_used||0)/1024).toFixed(1)+' / '+((s.mem_total||0)/1024).toFixed(0)+' GB';
+    const vramPct=s.gpu?Math.round(s.gpu.mem_used/s.gpu.mem_total*100):0;
+    const tempCol=s.gpu&&s.gpu.temp>70?'var(--red)':s.gpu&&s.gpu.temp>55?'var(--amb)':'var(--grn)';
     const rows=[
-      {l:'CPU',v:Math.round(s.cpu||0)+'%',p:s.cpu||0,c:'var(--state)'},
-      {l:'Memory',v:((s.mem_used||0)/1024).toFixed(1)+' GB',p:s.mem_pct||0,c:'var(--state)'},
-      {l:'GPU',v:(s.gpu?s.gpu.util:0)+'%',p:s.gpu?s.gpu.util:0,c:'var(--pur)'},
-      {l:'VRAM',v:(s.gpu?s.gpu.mem_used:0)+' MB',p:s.gpu?Math.round(s.gpu.mem_used/s.gpu.mem_total*100):0,c:'var(--pur)'},
-      {l:'Disk',v:(s.disk_used||0)+'/'+(s.disk_total||0)+' GB',p:s.disk_pct||0,c:'var(--grn)'},
-      {l:'Temp',v:(s.gpu?s.gpu.temp:0)+'°C',p:s.gpu?Math.min(s.gpu.temp,100):0,c:'var(--amb)'},
+      {l:'CPU',       v:Math.round(s.cpu||0)+'%',              p:s.cpu||0,       c:'var(--state)'},
+      {l:'RAM',       v:memGB,                                  p:s.mem_pct||0,   c:'var(--state)'},
+      {l:'GPU Util',  v:(s.gpu?s.gpu.util:0)+'%',              p:s.gpu?s.gpu.util:0, c:'var(--pur)'},
+      {l:'VRAM',      v:(s.gpu?(s.gpu.mem_used+' / '+s.gpu.mem_total+' MB'):'-'), p:vramPct, c:'var(--pur)'},
+      {l:'Disk',      v:(s.disk_used||0)+' / '+(s.disk_total||0)+' GB', p:s.disk_pct||0, c:'var(--grn)'},
+      {l:'GPU Temp',  v:(s.gpu?s.gpu.temp:'-')+'°C',           p:s.gpu?Math.min(s.gpu.temp,100):0, c:tempCol},
     ];
-    el.innerHTML=rows.map(x=>`<div class="rc"><div class="rc-l">${x.l} <span class="rc-v">${x.v}</span></div>
-      <div class="rc-b"><div class="rc-f" style="width:${x.p}%;background:${x.c}"></div></div></div>`).join('');
-    el.innerHTML+=`<div class="rc" style="grid-column:1/-1">
-      <div class="rc-l">Server <span class="rc-v" style="color:${h.status==='ok'?'var(--grn)':'var(--red)'}">${h.status==='ok'?'Online ✓':'Offline'}</span></div>
-      <div style="font-size:8px;color:var(--mut);margin-top:3px">${h.memories||0} memories · ${VESPER}</div></div>`;
-  }catch{if(el)el.innerHTML='<div style="color:var(--mut);font-size:11px;grid-column:1/-1">Could not load</div>';}
+    const rowHtml=rows.map(x=>`<div class="rc">
+      <div class="rc-l">${x.l} <span class="rc-v">${x.v}</span></div>
+      <div class="rc-b"><div class="rc-f" style="width:${x.p}%;background:${x.c}"></div></div>
+    </div>`).join('');
+    const statusCol=h.status==='ok'?'var(--grn)':'var(--red)';
+    const statusTxt=h.status==='ok'?'Online ✓':'Offline ✗';
+    el.innerHTML=rowHtml+`
+      <div class="rc" style="grid-column:1/-1">
+        <div class="rc-l" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Server <span class="rc-v" style="color:${statusCol}">${statusTxt}</span></span>
+          <span style="font-size:8px;color:var(--mut)">${s.uptime||''}</span>
+        </div>
+        <div style="font-size:8px;color:var(--mut);margin-top:3px">${(h.memories||0).toLocaleString()} memories · i5-8250U · MX130 2GB</div>
+      </div>`;
+  }catch{if(el)el.innerHTML='<div style="color:var(--mut);font-size:11px;grid-column:1/-1">Could not load — server offline?</div>';}
 }
 
 // ── AOD ──────────────────────────────────
