@@ -123,6 +123,8 @@ The result feels less like a search engine and more like an assistant that's bee
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
+<img src="docs/screenshots/vesper-architecture.png" width="100%">
+
 > 🔒 **The cardinal rule:** `file_receiver.py` is the **only** process that ever writes to ChromaDB. Every other script POSTs to its HTTP API. This was a hard lesson — concurrent writes caused `hnswlib` segfaults that corrupted the entire EXT4 filesystem and required a full server rebuild from scratch.
 
 ---
