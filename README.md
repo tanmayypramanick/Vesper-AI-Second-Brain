@@ -111,7 +111,7 @@ The result feels less like a search engine and more like an assistant that's bee
 │   ─────────────────────                                                   │
 │   kiosk.html ◄──────────────────────────  /voice_fast  (SSE stream)     │
 │   Three.js orb                            /kiosk  (serves HTML)         │
-│   Web Speech API                                                          │
+                                                                          │
 │                                                                            │
 │   WhatsApp ◄────────────────────────────  openclaw/bot.js  (Baileys)    │
 │   Indian # — ingests + replies            responds only to OWNER_JID    │
@@ -303,7 +303,7 @@ Peak total:                           ~1,655 MB  /  2,048 MB   ← 393 MB headro
 ```
 "Hey Vesper"
      │
-     ├─ Web Speech API (wake word detection, continuous mode, lightweight)
+     ├─ Fast-whisper (wake word detection, continuous mode, lightweight)
      │
      ├─ VAD detects speech start  (RMS threshold > 0.015)
      │
@@ -428,12 +428,6 @@ Each state change updates orb colour/animation intensity, shows/hides subtitle t
 ### Always-On Display (AOD)
 
 After 10 minutes idle → pure black background, large ultra-thin clock, breathing 48px orb, soft pulsing hint. Wake word detection continues running through AOD.
-
-### Wake Word
-
-Web Speech API in continuous mode with `interimResults: false`. A word-count gate rejects sentences longer than 6 words (filters out ambient TV/YouTube audio — actual wake words are 1–3 words).
-
-Pattern: `/\bv[ae]sp(?:er?|ur|ir|a|uh?)?\b/`
 
 ---
 
