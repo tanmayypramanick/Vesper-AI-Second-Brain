@@ -1,0 +1,31 @@
+# Personal data — never commit
+client/exports/
+client/logs/
+client/queue/
+
+# Runtime state
+client/indexed_state.json
+client/screenpipe_state.json
+
+# WhatsApp session keys — secret
+server/openclaw/auth/
+server/openclaw/auth_us/
+
+# Bot config has phone numbers / owner JIDs
+server/openclaw/config.json
+server/openclaw/config_us.json
+server/openclaw/history.json
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# Credentials if added locally
+credentials.json
+*.key
+.elevenlabs_key
+.env

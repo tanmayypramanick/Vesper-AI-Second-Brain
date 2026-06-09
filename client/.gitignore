@@ -1,0 +1,21 @@
+# Added by code-review-graph
+.code-review-graph/
+
+# Personal data — never commit
+exports/
+logs/
+queue/
+
+# Runtime state
+indexed_state.json
+screenpipe_state.json
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# Credentials (if added locally)
+credentials.json
+*.key
