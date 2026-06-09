@@ -2,44 +2,31 @@
 
 > *"An AI that knows everything about you — privately, locally, always-on."*
 
-Vesper is a fully private, self-hosted personal AI built by Tanmay Pramanick. It ingests your entire digital life in real-time — every message, email, calendar event, browser visit, screen activity, and phone call — stores it in a local vector database, and lets you query it through voice, WhatsApp, or a beautiful kiosk display. Everything runs on your own hardware. No data ever leaves your home network.
+Vesper is a fully private, self-hosted personal AI built by **Tanmay Pramanick**. It ingests your entire digital life in real-time — every message, email, calendar event, browser visit, screen activity, voice recording, and phone call — stores it in a local vector database, and lets you query it through voice, WhatsApp, or a beautiful kiosk display.
+
+**Everything runs on your own hardware. No data ever leaves your home network.**
 
 ---
 
-## Table of Contents
+## What Can You Ask Vesper?
 
-1. [The Motivation](#the-motivation)
-2. [System Architecture](#system-architecture)
-3. [Hardware](#hardware)
-4. [Data Pipelines — What Gets Ingested](#data-pipelines)
-5. [The Server — file_receiver.py](#the-server)
-6. [AI Models Stack](#ai-models-stack)
-7. [Voice Pipeline](#voice-pipeline)
-8. [WhatsApp Bot (OpenClaw)](#whatsapp-bot)
-9. [Kiosk Frontend](#kiosk-frontend)
-10. [Mac-Side Files](#mac-side-files-vesper_agent)
-11. [Server-Side Files](#server-side-files-homtanmayvesper)
-12. [Performance & Optimizations](#performance--optimizations)
-13. [Features](#features)
-14. [Known Issues & Limitations](#known-issues--limitations)
-15. [Future Scope](#future-scope)
+These are real queries that work right now:
 
----
+| Query | How it answers |
+|-------|----------------|
+| *"What was I working on yesterday afternoon?"* | Screen OCR → app/window activity log |
+| *"What did Arpita say about the trip?"* | WhatsApp semantic search |
+| *"What's the last email from Google?"* | Gmail realtime index |
+| *"What meetings do I have this week?"* | Apple Calendar sync |
+| *"What did I browse last Tuesday?"* | Chrome/Safari history |
+| *"What's Harsh's phone number?"* | Contacts database |
+| *"Summarize my last 10 messages from mom"* | iMessage export |
+| *"Analyze my relationship with [person]"* | Cross-source sentiment analysis |
+| *"What notes did I write about the project?"* | Apple Notes index |
+| *"What's the weather right now?"* | wttr.in (anonymous) |
+| *"What time is it?"* | <50ms, no LLM involved |
 
-## The Motivation
-
-The project started from a simple, profound frustration: every AI assistant you talk to knows nothing about you. You ask it what you were working on last Tuesday — it doesn't know. You ask it about a person you've been messaging — it doesn't know. You ask it what that email said last week — it doesn't know.
-
-Cloud AI products (ChatGPT, Siri, Google Assistant) are completely stateless or only know what you explicitly tell them in the moment. And even when they do store data, it's on their servers, in their data centers, trained on your conversations to improve their products.
-
-Tanmay wanted something different:
-
-- **Privacy first**: Your messages, emails, location data, conversations — none of this should leave your home. Ever.
-- **True personalization**: An AI that has actually read your messages, knows who Arpita is, knows you work in Chicago, knows what you were coding last week.
-- **Always available**: Works on WhatsApp (from anywhere), via voice at your desk, on a dedicated display — not just on one device or app.
-- **Growing memory**: Every day that passes, it knows more. It accumulates. It gets smarter about *you* specifically.
-
-The vision: a personal AI that feels less like a search engine and more like a brilliant assistant who has been quietly observing and remembering everything about your life for months — and can recall any of it instantly.
+All of this answered in **< 2 seconds**, spoken aloud, with a natural voice.
 
 ---
 
@@ -51,654 +38,488 @@ The vision: a personal AI that feels less like a search engine and more like a b
 │                                                                      │
 │  ┌──────────────────┐        ┌──────────────────────────────────┐   │
 │  │    MacBook Pro    │        │        VESPER SERVER             │   │
-│  │  (10.0.0.169)     │        │      (10.0.0.120:5000 HTTPS)     │   │
+│  │  (data capture)  │        │      (Flask HTTPS + AI)          │   │
 │  │                  │        │                                  │   │
-│  │ ◆ vesper_capture ├──────► │ ◆ file_receiver.py (Flask)       │   │
-│  │   (screen OCR)   │  SCP/  │   THE ONLY ChromaDB writer       │   │
-│  │ ◆ vesper_audio   │  HTTP  │                                  │   │
+│  │ ◆ vesper_capture ├──────► │ ◆ file_receiver.py               │   │
+│  │   (screen OCR)   │  HTTP  │   THE ONLY ChromaDB writer       │   │
+│  │ ◆ vesper_audio   │  POST  │                                  │   │
 │  │   (24/7 mic)     │        │ ◆ ChromaDB (vesper_life)         │   │
-│  │ ◆ Gmail IMAP     │        │   12,000+ memories                │   │
+│  │ ◆ Gmail IMAP     │        │   12,000+ memories               │   │
 │  │   (real-time)    │        │   /mnt/hdd/vesper_memory/        │   │
 │  │ ◆ iMessage cron  │        │                                  │   │
-│  │ ◆ browser export │        │ ◆ Ollama (LLM + Embeddings)      │   │
-│  │ ◆ calendar cron  │        │   dolphin-voice (22/32 GPU)      │   │
-│  │ ◆ contacts cron  │        │   qwen3-ask (CPU)                │   │
-│  │ ◆ WhatsApp export│        │   nomic-embed-text (GPU)         │   │
+│  │ ◆ browser export │        │ ◆ Ollama LLM + Embeddings        │   │
+│  │ ◆ calendar cron  │        │   dolphin-phi (22/32 GPU)        │   │
+│  │ ◆ contacts sync  │        │   qwen3:4b (CPU)                 │   │
+│  │ ◆ Apple Notes    │        │   nomic-embed-text (GPU)         │   │
 │  └──────────────────┘        │                                  │   │
-│                              │ ◆ Piper TTS (CPU)                │   │
+│                              │ ◆ Piper TTS (CPU, ~62-220ms)     │   │
 │  ┌──────────────────┐        │ ◆ distil-whisper STT (CPU)       │   │
 │  │   OnePlus Nord   │        │                                  │   │
 │  │  (Kiosk Display) │        │ ◆ openclaw/bot.js (WhatsApp)     │   │
 │  │                  │◄───────│   Indian # (bot) + US # (ingest) │   │
 │  │ ◆ Fully Kiosk    │ HTTPS  │                                  │   │
-│  │ ◆ kiosk.html     │        └──────────────────────────────────┘   │
-│  │ ◆ Three.js Orb   │                        ▲                      │
-│  │ ◆ Wake word      │          WhatsApp ─────┘                      │
-│  │ ◆ AOD screen     │                                               │
+│  │ ◆ Three.js Orb   │        └──────────────────────────────────┘   │
+│  │ ◆ Wake word      │                        ▲                      │
+│  │ ◆ AOD screen     │          WhatsApp ─────┘                      │
 │  └──────────────────┘                                               │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Design Principle**: The server is the single source of truth. All data flows TO the server. All queries come FROM the server. No client directly touches ChromaDB. This prevents the race conditions and segfaults that plagued early versions.
+**Core design principle**: The server is the single source of truth and the **only** process that ever touches ChromaDB. This single-writer architecture was forced by a critical discovery early on — ChromaDB's hnswlib C++ extension segfaults when multiple processes write simultaneously, which caused filesystem corruption that required a full server rebuild. Everything now communicates via HTTP.
 
 ---
 
 ## Hardware
 
 ### Server (Primary AI Compute)
+
 | Component | Spec |
 |-----------|------|
-| CPU | Intel Core i5-8250U (Kaby Lake-R, 8th gen) |
-| Cores | 4 cores / 8 threads, 1.6 GHz base / 3.4 GHz boost |
+| CPU | Intel Core i5-8250U (8th gen, 8 threads) |
 | RAM | 15 GB DDR4 |
-| GPU | NVIDIA MX130 (Maxwell architecture, sm_5.0) |
-| VRAM | 2,048 MB |
-| GPU Memory BW | 28.8 GB/s |
+| GPU | NVIDIA MX130 (Maxwell, sm_5.0, 2 GB VRAM) |
 | Storage | External HDD at `/mnt/hdd/` for ChromaDB |
 | OS | Ubuntu Linux |
-| Network | LAN 10.0.0.120, Tailscale 100.123.15.32 |
 
-**Important GPU constraint**: The MX130 uses Maxwell architecture (compute capability sm_5.0). Many modern CUDA libraries (cuDNN used by TTS/Whisper) require sm_6.0+. This meant:
-- Kokoro TTS (desired) → EXECUTION_FAILED on Maxwell — **cannot use**
-- CTranslate2 CUDA for Whisper → broken on Maxwell — **cannot use**
-- Ollama's LLM inference → **works** (handles Maxwell correctly)
+**Important GPU constraint**: The MX130 is Maxwell architecture (sm_5.0). Almost every modern CUDA AI library requires sm_6.0+. This shaped every model choice:
+- Kokoro TTS → `cuDNN EXECUTION_FAILED` on Maxwell ❌
+- CTranslate2 CUDA Whisper → broken on Maxwell ❌  
+- Ollama LLM inference → works correctly ✅ (llama.cpp handles Maxwell)
 
-This forced CPU fallbacks for Whisper and TTS, which shaped the entire performance optimization strategy.
+So TTS and STT run on CPU. This forced aggressive optimization to still hit <2s latency.
 
 ### Mac (Data Capture)
-- Apple Silicon MacBook Pro (M-series)
-- Role: Screen capture, microphone recording, exporting iMessages/contacts/calendar/browser
-- All data is pushed to the server via SCP or HTTP POST
-- Never runs inference — purely a data collector
+- Apple Silicon MacBook Pro
+- Role: screen capture, microphone recording, exporting iMessages/contacts/calendar/browser
+- Purely a data collector — never runs inference
 
 ### OnePlus Nord (Kiosk Display)
-- 6.44" screen, 1080×2400 px
-- Permanently mounted on desk in landscape orientation
-- Always plugged in
-- Runs Fully Kiosk Browser (free)
-- Tailscale connected
-- Acts as a dedicated Vesper voice terminal / smart display
+- 6.44" screen, 1080×2400 px — permanently mounted on desk, always plugged in
+- Runs Fully Kiosk Browser in locked kiosk mode
+- Acts as a dedicated, always-on Vesper voice terminal and smart display
 
 ---
 
 ## Data Pipelines
 
-All data flows into ChromaDB via `file_receiver.py`. Each pipeline produces a memory with a category, source, and text document.
+All pipelines ingest to ChromaDB via `file_receiver.py`. Every memory has `category`, `source`, and `timestamp` metadata enabling time-filtered queries.
 
-### Real-Time Pipelines (Live / Near-Live)
+### Real-Time (Instant or Near-Instant)
 
-| Source | Method | Frequency | Category | Count (est.) |
-|--------|---------|-----------|----------|--------------|
-| Gmail | IMAP IDLE + 30min backup | Instant + 30min | email_received, email_sent | ~1,300 |
-| iMessages | Mac cron → SCP | Every 15 min | imessage | ~240+ |
-| WhatsApp (Indian) | Baileys bot (real-time) | Instant | whatsapp | ~1,700+ |
-| WhatsApp Business (US) | bot_us.js (real-time) | Instant | whatsapp | growing |
-| Screen Activity | vesper_capture.py → OCR | Activity-triggered | screen_ocr | ~1,100+ |
+| Source | Method | Latency | Category |
+|--------|---------|---------|----------|
+| Gmail | IMAP IDLE — server-push | < 5 seconds | `email_received` |
+| WhatsApp (Indian number) | Baileys bot — real-time hook | Instant | `whatsapp` |
+| WhatsApp Business (US number) | bot_us.js — ingest-only | Instant | `whatsapp` |
+| Screen Activity | Apple Vision OCR — activity-triggered | ~2s | `screen_ocr` |
+| Audio recording | `vesper_audio.py` — continuous capture | Ongoing | `audio` *(see below)* |
 
-### Scheduled Pipelines (Cron)
+### Scheduled (Cron on Mac)
 
-| Source | Schedule | Category | Notes |
-|--------|----------|----------|-------|
-| Browser History | Every 30 min | browser | Chrome + Safari |
-| Calendar | Hourly | calendar | Apple Calendar |
-| Contacts | Daily at 3 AM | contact | 908 contacts |
-| WhatsApp export | Every 30 min | whatsapp | Backup / history |
-| Instagram | Every 6 hours | *(broken)* | JSON corrupted |
+| Source | Schedule | Category |
+|--------|----------|----------|
+| iMessages | Every 15 min | `imessage` |
+| Browser history | Every 30 min | `browser` |
+| Calendar events | Hourly | `calendar` |
+| Contacts | Daily 3 AM | `contact` |
+| WhatsApp export | Every 30 min | `whatsapp` (backup) |
 
 ### Batch / Night Pipeline
 
-| Source | Schedule | Purpose |
-|--------|----------|---------|
-| Audio re-transcription | 2 AM daily | Re-transcribes day's WAV files with larger Whisper model for quality |
-| Proactive alerts | Every 30 min | Checks for important messages/emails, sends WhatsApp push |
-
-### Morning Briefing
-Every day at **8:00 AM**, `morning_briefing.py` assembles a personalized briefing:
-- Yesterday's screen activity summary
-- Today's calendar events
-- Recent important emails
-- WhatsApp message highlights
-- Top news (via DuckDuckGo)
-- Weather (wttr.in)
-
-Sent via WhatsApp to US number (appears on left side of WhatsApp Business app as an incoming message).
-
----
-
-## The Server
-
-`file_receiver.py` is the heart of Vesper. It is a Flask application (~2,500+ lines) running on port 5000 with HTTPS (self-signed cert).
-
-**It is the ONLY process that writes to ChromaDB.** This single-writer architecture was forced by a critical discovery: ChromaDB's `hnswlib` C++ extension segfaults when multiple processes (or even multiple threads) write to the same database simultaneously. The solution was complete centralization.
-
-### Key Endpoints
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/health` | GET | Returns `{"status":"ok","memories":N}` |
-| `/ingest` | POST | Async memory ingestion (202, no wait) |
-| `/store_memory` | POST | Synchronous memory write (200 after write) |
-| `/store_ocr` | POST | Screen capture OCR storage |
-| `/transcribe` | POST | Base64 WAV → Whisper text |
-| `/transcribe_partial` | POST | Partial/streaming Whisper (live display) |
-| `/voice_prepare` | POST | Pre-embed query + ChromaDB fetch (called while user still talking) |
-| `/voice_fast` | POST | **Main voice endpoint** — SSE stream of text+audio chunks |
-| `/voice_greet` | POST | Random casual greeting WAV |
-| `/ask` | POST | JSON endpoint for smart qwen3 queries (WhatsApp /model qwen3) |
-| `/recall` | POST | Query ChromaDB without LLM (returns raw memories) |
-| `/query` | POST | Direct ChromaDB query |
-| `/ui` | GET | Serves voice_ui.html (chat UI) |
-| `/kiosk` | GET | Serves kiosk.html (kiosk frontend) |
-| `/cert` | GET | Serves SSL cert for Android installation |
-
-### Threading Architecture
-
-- `_chroma_lock` (`threading.Lock()`) — ALL ChromaDB reads and writes go through this lock. One operation at a time.
-- `_llm_sem` (`threading.Semaphore(1)`) — Only in `/ask` endpoint, one LLM inference at a time
-- `_executor` (`ThreadPoolExecutor(max_workers=2)`) — For async `/ingest` operations
-- `_nomic_warm_lock` — Prevents nomic-embed from being unloaded during requests
-
-### Voice Fast Endpoint — Query Routing Logic
-
-`/voice_fast` is the most complex piece of code in Vesper. It receives a question and returns a Server-Sent Events (SSE) stream of interleaved text chunks (`T:<base64>`) and audio WAV chunks (`A:<base64>`).
-
-**Query routing hierarchy** (first match wins):
-1. **Fast paths** (zero ChromaDB, zero LLM):
-   - Wake word / identity / "who are you"
-   - DOB fast path ("my date of birth" → instant answer)
-   - Greetings ("hi", "hello", "hey")
-   - Time/Date
-   - Weather (wttr.in)
-   - Meta-memory count
-   - Capability questions ("what can you do")
-2. **Data-lookup paths** (ChromaDB, no LLM):
-   - Message lookup (`_is_msg`)
-   - Email lookup (`_is_email`)
-   - Contact lookup (`_is_contact`)
-   - Calendar lookup (`_is_calendar_q`)
-   - Location lookup
-   - Notes lookup
-   - Screen activity
-   - Relationship analysis
-3. **LLM paths** (ChromaDB + LLM):
-   - Personal complex queries → dolphin-voice (uncensored)
-   - General complex queries → qwen3-ask (smarter)
-   - Web search queries → DuckDuckGo + LLM
-4. **Anti-hallucination guards**:
-   - Personal-life questions with no memory → refuse ("I don't have that recorded")
-   - Meal/food queries → always refuse
-   - Bank/financial → always refuse
+| Job | When | Purpose |
+|-----|------|---------|
+| Audio re-transcription | 2 AM daily | Re-transcribes day's WAVs with larger whisper-medium model for quality |
+| Morning briefing | 8 AM daily | Assembles and sends personalized WhatsApp summary |
+| Proactive alerts | Every 30 min | Scans for urgent/important messages and emails — pushes WA notification |
 
 ---
 
 ## AI Models Stack
 
-### LLM — Inference
+### LLM
 
-| Model | Use | GPU Layers | Speed | VRAM |
-|-------|-----|-----------|-------|------|
-| **dolphin-voice** (dolphin-phi 2.7B) | Voice/casual queries | 22/32 | ~15.5 tok/s | ~1,100 MB |
-| **qwen3-ask** (Qwen3 4B) | Complex/analytical queries | 0 (CPU) | ~5 tok/s | 0 |
+| Model | Use | GPU Layers | Speed | Purpose |
+|-------|-----|-----------|-------|---------|
+| **dolphin-phi 2.7B** | Voice queries | 22/32 GPU | ~15.5 tok/s | Fast, uncensored (no refusals on personal questions) |
+| **qwen3:4b** | Deep/analytical queries | 0 (CPU) | ~5 tok/s | Better reasoning, 32K context |
 
-**Why dolphin-phi for voice?**
-- Based on Microsoft Phi-2, an excellent small model with 58.4% MMLU
-- **Uncensored** — critical for personal questions about relationships, health, private matters
-- Fits partially on the MX130 GPU at 22/32 layers
-- No refusals on personal questions (unlike Qwen3 which hedges heavily)
+**Why dolphin-phi?** Microsoft Phi-2-based, uncensored, small enough to partially fit on the MX130 GPU. No hedging when you ask personal questions about relationships, health, or private matters.
 
-**Why Qwen3 for smart queries?**
-- Better reasoning, 32K context window (vs phi-2's 2K)
-- More accurate for analytical/summarization tasks
-- Runs fine on CPU since it's used only for /ask endpoint (non-realtime)
+**Why qwen3 for deep queries?** Used only for `/model qwen3` mode on WhatsApp — when you want a thorough analytical answer and don't need sub-2s latency.
 
 ### Embedding
 
-| Model | Inference | VRAM | Purpose |
-|-------|-----------|------|---------|
-| **nomic-embed-text** | GPU (always loaded) | 555 MB | All ChromaDB embed/query |
-
-Always resident in GPU memory. Never evicted. All semantic search in Vesper goes through this model.
+| Model | Inference | VRAM | Notes |
+|-------|-----------|------|-------|
+| **nomic-embed-text** (768-dim) | GPU, always loaded | 555 MB | All semantic search — never evicted |
 
 ### Speech-to-Text
 
-| Model | Inference | Speed | Notes |
-|-------|-----------|-------|-------|
-| **distil-whisper-small.en** | CPU (int8) | RTF ~0.74x | Cannot use GPU (Maxwell) |
-
-RTF 0.74x means a 3-second audio clip takes ~2.2 seconds to transcribe. Fast enough for kiosk and WhatsApp voice notes.
-
-Night batch uses **whisper-medium** (CPU, runs at 2 AM when idle) for higher-quality re-transcription of the day's audio diary recordings.
+| Model | Inference | RTF | Notes |
+|-------|-----------|-----|-------|
+| **distil-whisper-small.en** | CPU int8 | 0.74x | Real-time queries — 3s audio → ~2.2s transcript |
+| **whisper-medium** | CPU | ~1.8x | Night batch only — higher quality re-transcription |
 
 ### Text-to-Speech
 
-| Model | Inference | Speed | Notes |
-|-------|-----------|-------|-------|
-| **Piper** (hfc_female-medium) | CPU | 62–220ms/sentence | PRIMARY |
-| **Supertonic-3** | CPU | 330–830ms/sentence | FALLBACK |
-
-Kokoro TTS (the desired model) was tested and failed: `cuDNN EXECUTION_FAILED` on Maxwell sm_5.0. Piper was the best CPU-native alternative found.
+| Model | Inference | Speed |
+|-------|-----------|-------|
+| **Piper** (hfc_female-medium) | CPU | 62–220ms per sentence |
+| Supertonic-3 | CPU | 330–830ms (fallback) |
 
 ### VRAM Budget
 
 ```
-nomic-embed-text:        555 MB  (always loaded)
-dolphin-voice (22/32):  ~1,100 MB  (loaded on first voice query)
-─────────────────────────────────
-Total peak:             ~1,655 MB / 2,048 MB    (393 MB headroom)
+nomic-embed-text:         555 MB  (always loaded)
+dolphin-phi (22/32 GPU): ~1,100 MB  (loaded on first voice query)
+──────────────────────────────────────────────────
+Peak usage:              ~1,655 MB / 2,048 MB    (393 MB headroom)
 ```
 
 ---
 
-## Voice Pipeline
+## Voice Pipeline (< 2s First Word)
 
-The voice pipeline was the most technically challenging and most refined part of the project. Initial latency was 9–25 seconds from question to first word. Current latency is **1.5–2.5 seconds**.
+This was the hardest part to build. First iteration latency was 9–25 seconds. Current: **1.5–2.5s**.
 
-### Pipeline Stages (Kiosk)
+### How It Works
 
 ```
-User speaks → MediaRecorder (WebM/Opus, 16kHz)
-           → VAD silence detection (1.4s quiet → stop)
-           → Partial transcription via /transcribe_partial (live display)
-           → Full audio blob → base64 → POST /voice_fast
-                → Server: Whisper STT → question text
-                → Embed with nomic-embed-text
-                → ChromaDB query (cosine similarity)
-                → Routing logic (fast path / data path / LLM path)
-                → Generate response (dolphin or qwen3 via Ollama)
-                → Stream response as SSE:
-                    data: T:<base64_text_chunk>
-                    data: A:<base64_wav_chunk>
-                    data: END
-           → Browser: decode text + play WAV chunks as they arrive
-           → First audio fires at first comma/period (< 1s from generation start)
+User says "Hey Vesper"
+  → Web Speech API (wake word, continuous, lightweight)
+  → VAD detects speech start (RMS > 0.015)
+  → MediaRecorder starts (WebM/Opus, 16kHz)
+  → /voice_prepare called while user is still talking
+       → server pre-embeds partial transcript
+       → ChromaDB results cached
+  → VAD detects 1.4s silence → recording stops
+  → Full audio blob → base64 → POST /voice_fast
+       → Whisper STT → question text
+       → nomic-embed (use cached embed if ready)
+       → ChromaDB cosine search
+       → Routing logic (fast path / data path / LLM path)
+       → dolphin-phi generates response
+       → At every comma/period → Piper TTS chunk
+       → SSE stream:
+           data: T:<base64_text>   ← display
+           data: A:<base64_wav>    ← play
+  → AudioContext queues WAV chunks as they arrive
+  → First word plays in < 1s from LLM start
 ```
 
-### Key Optimization: Comma-Split Streaming
+### The Key Optimization: Comma-Split TTS Streaming
 
-The biggest latency win was "comma-split TTS streaming". Instead of waiting for the entire LLM response before sending audio, Vesper generates TTS at every natural pause (comma, period, semicolon). The first audio chunk fires the moment the LLM produces its first complete phrase — typically within 600ms of the LLM starting.
+Instead of waiting for the full LLM response before synthesizing speech, Vesper fires TTS at every natural pause (comma, period, semicolon). The first audio chunk plays the moment the LLM produces its first complete phrase — typically 600ms after generation starts.
 
-This dropped memory query latency from **5.3s → 2.0s**.
+This alone dropped memory-query latency from **5.3s → 2.0s**.
 
-### Voice Pipeline (WhatsApp)
+### Query Routing Hierarchy (`/voice_fast`)
 
-WhatsApp uses the same `/voice_fast` endpoint but with `source: "whatsapp"`:
-- Audio: WhatsApp voice notes → Baileys downloads → base64 → `/voice_fast`
-- Text: Direct text message → `/voice_fast` or `/ask` (for /model qwen3)
-- Response: SSE stream → bot collects all T: chunks → sends as WhatsApp text message
+1. **Fast paths** (zero ChromaDB, zero LLM) — < 50ms:
+   - Time, date, weather
+   - Identity ("who are you")
+   - Date of birth (hardcoded for instant answer)
+   - Greetings
+   - Memory count
+   - Capability questions
 
-### Pre-Computation via /voice_prepare
+2. **Data lookup paths** (ChromaDB, no LLM) — 200–800ms:
+   - Message lookup (last text/WhatsApp from someone)
+   - Email lookup
+   - Contact lookup (phone, email, address)
+   - Calendar (upcoming events)
+   - Screen activity
+   - Location (from stored GPS data)
 
-While the user is still speaking, the Mac (or browser VAD) calls `/voice_prepare` to:
-1. Start embedding the partial transcript
-2. Pre-fetch relevant memories from ChromaDB
-3. Cache the results
+3. **LLM synthesis paths** (ChromaDB + LLM) — 1.5–2.5s:
+   - Personal complex queries → dolphin-phi (uncensored)
+   - General knowledge → qwen3-ask
+   - Web search → DuckDuckGo + LLM
 
-When `/voice_fast` arrives with the full question, the embedding and ChromaDB results are already done — saving ~300ms.
+4. **Anti-hallucination guard**: If a personal-life question (meals, bank, gym, sleep) has zero matching memories → explicit refusal. Vesper will not make up facts about your life.
+
+### Latency Journey
+
+| Milestone | First-word latency | What changed |
+|-----------|--------------------|--------------|
+| Initial build (phi4-mini CPU) | 9–25s | Baseline |
+| Moved LLM to GPU (dolphin 22/32 layers) | 3.5s | |
+| Shorter system prompt (25 tokens → 9) | 2.8s | |
+| Comma-split TTS streaming | 2.0s | Biggest single gain |
+| Fast paths for common queries | < 0.5s | No LLM at all |
+| `/voice_prepare` pre-computation | 1.7s | Embed while user speaks |
 
 ---
 
-## WhatsApp Bot
+## WhatsApp Bot (OpenClaw)
 
-The WhatsApp integration uses **Baileys** (Node.js, `@whiskeysockets/baileys`) for unofficial WhatsApp Web protocol access.
+Vesper lives in your WhatsApp. Built on **Baileys** (Node.js unofficial WhatsApp Web protocol).
 
 ### Two-Bot Architecture
 
-**Indian Number Bot** (`bot.js`):
-- Connected to Tanmay's personal Indian WhatsApp number
-- **Only responds to messages from the US number** (OWNER_JID gate)
-- Ingests ALL received messages to ChromaDB silently (family, friends, contacts)
-- Uses API server on port 5001 for outbound messages
+**Indian Number Bot** (`server/openclaw/bot.js`):
+- Connected to personal Indian WhatsApp
+- Has an `OWNER_JID` gate — **only responds to messages from the US number** (prevents replying to family/friends)
+- Silently ingests ALL received messages to ChromaDB
+- Runs an HTTP API on port 5001 for sending outbound messages
 
-**US Number Bot** (`bot_us.js`):
+**US Number Bot** (`server/openclaw/bot_us.js`):
 - Connected to WhatsApp Business (US number)
-- **Ingest-only** — never replies to anyone
-- Stores all WA Business messages to ChromaDB
-- This is how Tanmay's professional/US conversations get recorded
+- Ingest-only — never replies to anyone
+- Captures all US-side conversations to ChromaDB
 
-### Bot Features
+### Bot Capabilities
 
-| Feature | How |
-|---------|-----|
-| Talk to Vesper | Message Indian # from US # |
-| Voice notes | Bot downloads → Whisper → /voice_fast |
-| Photo analysis | Bot downloads → LLM vision |
-| Natural "remember X" | Regex → /store_memory |
-| /remember fact | Command → /store_memory |
-| /model qwen3 | Routes to /ask (smarter, 90s timeout) |
-| /model dolphin | Forces dolphin-voice |
-| /model auto | Resets to automatic routing |
-| /clear | Clears conversation history |
-| Morning briefing | 8 AM daily → sent to US number |
-| Retry logic | 30s timeout + 1 retry + 10s gap |
-| Anti-deadlock | Cron checks /health, kills+restarts within 5 min |
+| Command | What it does |
+|---------|-------------|
+| Just send a message | Vesper answers via `/voice_fast` |
+| Send a voice note | Transcribed by Whisper → Vesper answers |
+| Send a photo | Described by LLM vision |
+| *"remember [fact]"* | Stored directly to ChromaDB |
+| `/remember [fact]` | Explicit memory store |
+| `/model qwen3` | Switch to smarter (but slower) model |
+| `/model dolphin` | Switch back to fast model |
+| `/clear` | Clear conversation history |
 
-### Conversation History
-
-Per-JID conversation history (last 6 exchanges) is maintained in `history.json` and passed to the LLM for context in multi-turn conversations.
+Conversation history (last 6 exchanges) is persisted per-JID so multi-turn conversations work across session restarts.
 
 ---
 
-## Kiosk Frontend
+## Kiosk Frontend (`client/frontend/kiosk.html`)
 
-The kiosk is a single self-contained HTML file (`kiosk.html`) served at `https://10.0.0.120:5000/kiosk`. It runs in Fully Kiosk Browser on the Nord permanently.
+A single self-contained HTML file. Served from the Flask server. Runs in Fully Kiosk Browser on the Nord permanently.
+
+### The 3D Orb
+
+Built with Three.js (r128) and a custom GLSL fragment shader:
+- **Inner ocean**: Procedural sine-wave displacement simulates water surface
+- **Color shifts**: Deep blue → cyan rim glow at rest; green/teal during listening; white burst on wake
+- **Wireframe overlay**: Subtle grid at 9% opacity
+- **Particle cloud**: 220 floating dots orbiting the sphere
+- **Breathing animation**: 0.6Hz pulse (scale 1.0–1.012)
+- **Audio-reactive**: Scale increases with microphone RMS during recording
 
 ### Pages
 
 | Page | Content |
 |------|---------|
-| **Home** | 3D animated orb, clock, greeting, weather panel, Up Next events, Quick Controls |
-| **Memory** | Total memory count + breakdown by source |
-| **System** | Server status, model info, pipeline health |
-| **Settings** | All configuration toggles |
-
-### The 3D Orb
-
-Built with Three.js (r128). Uses a custom GLSL fragment shader to simulate an ocean-in-a-sphere effect:
-
-- **Inner ocean**: Procedural sine-wave displacement creates a subtle ocean surface with depth
-- **Color**: Deep blue with cyan rim glow; shifts to green/teal during listening
-- **Wireframe overlay**: Subtle blue grid at 9% opacity
-- **Particle cloud**: 220 floating dots orbiting the sphere
-- **Equatorial ring**: Glowing line at the equator
-- **Breathing animation**: Subtle 0.6Hz pulse (scale 1.0–1.012)
-- **Audio-reactive**: Scale increases proportional to microphone volume during recording
-
-### Voice Interaction
-
-Unlike basic implementations, the kiosk uses the same high-quality pipeline as the main voice UI:
-- **Recording**: `MediaRecorder` (WebM/Opus) — NOT Web Speech API (which gives bad quality)
-- **STT**: Audio blob → `/transcribe_partial` (live display) + `/voice_fast` (full)
-- **Wake word**: Web Speech API in **continuous mode** (lightweight, only listens for "vesper")
-- **VAD**: Web Audio API analyser with RMS threshold (0.015) — auto-stops after 1.4s silence
-- **Playback**: Audio chunks queued as `<audio>` elements, played sequentially
+| **Home** | 3D orb, clock, weather, upcoming events, ambient context feed |
+| **Memory** | Live ChromaDB count, breakdown by source |
+| **System** | Server health, model status, pipeline indicators |
+| **Settings** | All feature toggles — voice, wake word, TTS, AOD, DND |
 
 ### Always-On Display (AOD)
 
-After 10 minutes of inactivity (configurable: 5m/10m/15m), the screen transitions to the Vesper AOD:
-- Pure black background (minimal power draw)
-- Large clock (font-weight 100, very elegant)
-- Date, subtle weather
+After 10 minutes idle, transitions to a minimal AOD:
+- Pure black background (minimal OLED power draw)
+- Large ultra-thin clock
 - Breathing Vesper orb (48px, subtle glow)
 - "say vesper to wake" pulsing hint
 
-When wake word is detected or screen is tapped:
-- AOD fades out (1.2s transition)
-- Home page returns instantly
-- Recording starts automatically if wake word triggered
-
-### Settings Toggles
-
-- Voice interaction on/off
-- Wake word on/off
-- TTS audio playback on/off
-- Do Not Disturb (mutes audio)
-- 3D Animations on/off
-- Weather panel on/off
-- Calendar events on/off
-- AOD mode on/off + timeout
-- Server URL (change to Tailscale IP when off-network)
-- Install SSL Cert (one-tap download of server cert)
-- Connection Test
+Wake word detection continues in AOD mode. Saying "Vesper" immediately brings the screen back and starts recording.
 
 ---
 
-## Mac-Side Files (`/Users/tanmay/vesper_agent/`)
+## Cron Jobs (Server)
 
-| File | Purpose |
-|------|---------|
-| `vesper_capture.py` | Screen capture daemon — uses Apple Vision OCR, triggers on screen activity, sends to server |
-| `vesper_audio.py` | 24/7 microphone recorder — saves WAV chunks, sends to /transcribe |
-| `vesper_screen.py` | Secondary screen capture helper |
-| `vesper_phone.py` | Phone call detection and recording |
-| `vesper_meeting.sh` | Meeting mode — better audio processing |
-| `gmail_realtime.py` | IMAP IDLE listener — instant Gmail ingestion |
-| `file_watcher.py` | Watches export queue, SCP's to server |
-| `screenpipe_sync.py` | Syncs screenpipe-rs output to server |
-| `export_imessages.sh` | AppleScript export of iMessage database |
-| `export_gmail.sh/py` | Gmail export via IMAP |
-| `export_browser.sh` | Safari/Chrome history export |
-| `export_calendar.sh` | Apple Calendar export via osascript |
-| `export_contacts.sh` | Contacts export via osascript |
-| `export_whatsapp.sh/py` | WhatsApp chat history export |
-| `export_instagram.py` | Instagram data export parser |
-| `export_notes.sh` | Apple Notes export |
-| `export_reminders.sh` | Reminders export |
-| `export_terminal.sh` | Terminal command history export |
-| `send_email.py` | Sends emails via AppleScript (Vesper can send emails on your behalf) |
-| `imessage_realtime.sh` | Near-real-time iMessage monitor |
-| `com.vesper.gmail_realtime.plist` | LaunchAgent for gmail_realtime.py |
-| `indexed_state.json` | Tracks which files have been ingested |
-| `screenpipe_state.json` | Screenpipe sync state |
-| `frontend/kiosk.html` | Kiosk web app source |
-| `frontend/deploy.sh` | Deploy kiosk to server |
+All as user `tanmay`. The watchdog is the most important:
+
+```
+*/5 * * * *   curl /health or kill+restart file_receiver.py
+*/2 * * * *   pgrep bot.js || start bot.js
+*/15 * * * *  ingest_imessages.py
+*/30 * * * *  ingest_gmail.py, ingest_browser.py, proactive_alerts.py
+0  * * * *    ingest_calendar.py
+0  8 * * *    morning_briefing.py
+0  2 * * *    night_batch.py (whisper-medium re-transcription)
+0  3 1 * *    Tailscale cert renewal + server restart
+```
+
+The watchdog uses `curl -sk --max-time 4 https://127.0.0.1:5000/health` — not just port binding. This detects deadlocks where the port is LISTEN but the server is frozen.
 
 ---
 
-## Server-Side Files (`/home/tanmay/vesper/`)
+## Currently Building
 
-### `pipelines/`
+These features are actively in development or partially implemented:
 
-| File | Purpose |
-|------|---------|
-| `file_receiver.py` | **THE MAIN SERVER** — Flask HTTPS API, ChromaDB writer, all AI inference |
-| `voice_ui.html` | Browser-based chat UI (served at /ui) — full chat interface with history |
-| `kiosk.html` | Kiosk frontend (served at /kiosk) |
-| `morning_briefing.py` | 8 AM daily WhatsApp briefing assembler |
-| `night_batch.py` | 2 AM audio re-transcription with larger Whisper |
-| `proactive_alerts.py` | 30-min check — pushes important notifications |
-| `memory_client.py` | HTTP client library for all ingest scripts |
-| `memory.py` | Legacy memory utilities |
-| `ingest_browser.py` | Browser history → ChromaDB |
-| `ingest_calendar.py` | Calendar events → ChromaDB |
-| `ingest_contacts.py` | Address book → ChromaDB |
-| `ingest_email.py` | Email → ChromaDB (IMAP-based) |
-| `ingest_gmail.py` | Gmail backup ingestion |
-| `ingest_imessages.py` | iMessage database → ChromaDB |
-| `ingest_whatsapp.py` | WhatsApp export → ChromaDB |
-| `ingest_instagram.py` | Instagram DMs/posts → ChromaDB (broken) |
-| `ingest_instagram_smart.py` | Improved Instagram ingestion |
-| `ingest_files.py` | File system scan → ChromaDB |
-| `parse_instagram.py` | Parse Instagram ZIP export |
-| `ask_vesper.py` | CLI tool to query Vesper |
-| `email_tools.py` | Email sending utilities |
-| `screenpipe_sync.py` | Receives screenpipe data from Mac |
+### 24/7 Audio Diary (`client/vesper_audio.py`)
 
-### `openclaw/`
+`vesper_audio.py` is already running — it records a continuous audio stream from the Mac microphone, splitting into 30-second WAV chunks saved to `/mnt/hdd/vesper_audio/`.
 
-| File | Purpose |
-|------|---------|
-| `bot.js` | Main WhatsApp bot (Indian number) |
-| `bot_us.js` | WhatsApp Business ingest bot (US number) |
-| `config.json` | Indian bot config: phone, owner_jid, morning_jid |
-| `config_us.json` | US bot config: phone |
-| `history.json` | Persisted conversation histories per JID |
-| `auth/` | Baileys session keys for Indian number |
-| `auth_us/` | Baileys session keys for US number |
+**What's done**: Recording, storage, night-batch re-transcription with whisper-medium.
 
----
+**What's being built**: The pipeline to turn these recordings into queryable memories:
+- Speaker diarization (pyannote) to separate who is talking
+- Context tagging (was this a meeting? a call? background TV?)
+- Semantic chunking — group sentences into meaningful memories, not just fixed-size chunks
+- Store as `category: audio_diary` with speaker, context, timestamp metadata
+- Enable queries like: *"What did I say about the project during the call on Monday?"*, *"What conversations did I have this week?"*, *"Who called me yesterday?"*
 
-## Performance & Optimizations
+This will be the most personal and powerful data source — a complete record of your spoken life.
 
-### The Latency Journey
+### Proactive Memory Surface
 
-| Milestone | First Word Latency | What Changed |
-|-----------|-------------------|--------------|
-| Initial (phi4-mini CPU) | 9–25s | Baseline |
-| Moved to dolphin-phi GPU | 3.5s | 22/32 layers on MX130 |
-| Short system prompt | 2.8s | Cut from 25 tokens → 9 tokens |
-| Comma-split TTS streaming | 2.0s | Fire audio at every pause, not end |
-| Fast paths for common queries | <0.5s | No ChromaDB/LLM for time, identity, DOB |
-| Voice prepare pre-compute | 1.7s | Embed while user still speaking |
+Vesper currently only responds to queries. The next major mode is **proactive** — Vesper surfaces relevant memories without being asked:
+- *"You have a call in 20 minutes (from your calendar)"*
+- *"Priya texted twice asking about [topic] — you haven't replied"*
+- *"Based on your screen activity, you've been working on [project] for 3 hours"*
 
-### The Hardest Technical Problems
+`proactive_alerts.py` is the early version of this — it already scans for urgent/unanswered messages every 30 minutes and pushes WhatsApp alerts.
 
-**1. ChromaDB Race Conditions / Filesystem Corruption**
+### Multi-Turn Voice Conversation
 
-The first architecture had multiple Python processes writing to ChromaDB simultaneously. This caused `hnswlib` segfaults that corrupted the EXT4 filesystem into read-only mode. The entire server had to be rebuilt.
+Currently each kiosk interaction is stateless. Building persistent conversation history into the kiosk so you can say:
+- *"Tell me about my emails from last week"*
+- *"Which ones are from Google?"* (follow-up, without restating context)
+- *"Summarize that one"*
 
-*Solution*: Single-writer architecture. `file_receiver.py` is the only process that touches ChromaDB. A `threading.Lock()` serializes every operation. All other processes communicate via HTTP.
+### Relationship Memory Graph
 
-**2. Maxwell GPU (sm_5.0) CUDA Incompatibilities**
+A structured view of your relationship with each person in your life — built from all their messages, iMessages, WhatsApp chats, emails:
+- Message frequency over time
+- Common topics
+- Sentiment trend
+- "You haven't talked to [person] in 3 weeks"
 
-The server's MX130 GPU is Maxwell architecture. Almost every modern CUDA AI library requires sm_6.0+ (Pascal). Tested and confirmed broken:
-- Kokoro TTS: `cuDNN EXECUTION_FAILED`
-- CTranslate2 Whisper with CUDA: broken
-- PyTorch GPU inference: limited
+### Hardware Upgrade Path
 
-*Solution*: Adopted Ollama (which handles Maxwell correctly via llama.cpp), CPU Piper TTS, CPU faster-whisper. Accepted the speed tradeoffs.
-
-**3. Server Deadlock (Port Bound but Not Responding)**
-
-The server would occasionally deadlock — port 5000 was bound and showed LISTEN, but HTTP requests hung forever. The original watchdog checked only port binding (`ss -tlnp | grep :5000`), which passed even when deadlocked.
-
-*Solution*: Changed watchdog to `curl -sk --max-time 4 https://127.0.0.1:5000/health`. If this fails (including timeout), the watchdog kills and restarts. Detects deadlocks within 5 minutes.
-
-**4. WhatsApp Bot Auto-Replying to Contacts**
-
-The bot was connected to the Indian number (personal number). With no owner check, every message from any contact (Arpita, family, friends) got an AI-generated reply. This was discovered when the bot sent "Yeah, I'm right here!" and "Alright, have a great day!" to Arpita mid-conversation.
-
-*Solution*: `OWNER_JID` gate in `handleMessage`. If `OWNER_JID` is set, only messages from that JID get LLM responses. Everyone else is silently ingested. Default-deny when no owner configured.
-
-**5. LLM Returning Raw ChromaDB Dumps**
-
-The `/voice_fast` routing logic had `_is_msg` keywords including `"tell me"`, `"what did"`, `"whatsapp"`, `"text"` — words that appear in completely unrelated questions. "What else can you do in WhatsApp?" matched `_is_msg` → ChromaDB returned a screen OCR document → bot responded with raw `[Screen OCR | Electron] Debug Vesper local AI...`.
-
-*Solution*: Massively tightened `_is_msg` to only explicit message-lookup phrases ("last text", "texted me", "message from"). Added capability question fast path. Made "Last message:" prefix conditional on the user actually asking for the last message.
+The MX130 GPU is the biggest bottleneck. With a GTX 1650 or better:
+- Kokoro TTS on GPU → <100ms synthesis, human-quality voice
+- Whisper medium on GPU → <0.5s transcription
+- Entire voice pipeline → **< 1 second** total latency
 
 ---
 
-## Features
+## The Hardest Technical Problems Solved
 
-### Currently Working
+### 1. ChromaDB Race Conditions / Filesystem Corruption
 
-| Feature | Description |
-|---------|-------------|
-| **Voice conversation** | < 2s first word, natural streaming audio |
-| **WhatsApp chat** | Full Vesper on WhatsApp from US number |
-| **Morning briefing** | Daily 8 AM personalized summary |
-| **Proactive alerts** | Notifies on important messages/emails |
-| **Real-time Gmail** | Emails arrive in memory the moment they're received |
-| **iMessage history** | Last 15 min latency, full conversation memory |
-| **Screen activity memory** | What apps/windows you were using and when |
-| **Contact lookup** | "What's Arpita's number?" → instant |
-| **Calendar awareness** | "What events do I have?" → formatted upcoming events |
-| **Location memory** | Stores GPS/place names from WhatsApp live location |
-| **Anti-hallucination** | Refuses to answer personal questions without data |
-| **DOB fast path** | "When was I born?" → instant, no LLM |
-| **Relationship analysis** | "Analyze my relationship with Harsh" |
-| **Voice notes** | WhatsApp voice notes → transcribed + answered |
-| **Photo analysis** | WhatsApp photos → described by LLM |
-| **Notes ingestion** | 23 Apple Notes stored and queryable |
-| **Browser history** | What you read/watched/visited |
-| **AOD kiosk** | Always-on display with clock, dims to black after idle |
-| **Wake word** | "Hey Vesper" wakes kiosk from AOD |
-| **Settings panel** | Toggle any feature via sidebar |
-| **Memory count** | Live ChromaDB count display |
-| **Pipeline status** | Visual health of all data pipelines |
-| **SSL cert download** | One-tap cert installation for Android |
-| **Night batch** | 2 AM audio quality improvement run |
+First architecture: multiple Python processes writing to ChromaDB simultaneously. `hnswlib` segfaulted mid-write, corrupting the EXT4 filesystem to read-only. The entire server had to be rebuilt from scratch.
 
-### Memory Statistics (as of Session 16)
+**Solution**: Single-writer architecture. `file_receiver.py` is the only process that ever touches ChromaDB. A `threading.Lock()` serializes every operation. All other scripts POST to the HTTP API.
 
-| Category | Approximate Count |
-|----------|------------------|
+### 2. Maxwell GPU CUDA Incompatibility
+
+Almost every modern CUDA AI library requires sm_6.0+ (Pascal). The MX130 is sm_5.0. Every "obvious" choice (Kokoro TTS, CTranslate2 Whisper) failed with CUDA errors.
+
+**Solution**: Adopted Ollama (llama.cpp handles Maxwell correctly) for LLM inference. CPU Piper for TTS. CPU faster-whisper for STT. Accepted the tradeoffs and optimized around them.
+
+### 3. Server Deadlock Detection
+
+The server would deadlock — port 5000 bound and LISTEN, but every HTTP request hung indefinitely. Original watchdog checked `ss -tlnp | grep :5000`, which passed even when deadlocked.
+
+**Solution**: Changed watchdog to `curl -sk --max-time 4 https://127.0.0.1:5000/health`. Timeout → kill + restart. Now detects deadlocks within 5 minutes.
+
+### 4. AudioContext Suspension (Chrome Android)
+
+The kiosk's `AudioContext` was created inside the Web Speech API wake-word callback — outside a direct user gesture. Chrome Android creates AudioContext in `suspended` state in this case. WAV chunks were decoded and scheduled but the audio clock never advanced — complete silence.
+
+**Solution**: Pre-warm `AudioContext` during `onFirstTouch` (the first tap to enter fullscreen). Both `queueWav()` and `playTone()` explicitly `await ac.resume()` before scheduling audio sources.
+
+### 5. WhatsApp Bot Auto-Replying to Contacts
+
+With no owner gate, every message from any contact — family, friends, girlfriend — got an AI-generated reply. Discovered when the bot responded to a personal conversation with "Yeah, I'm right here!" and "Alright, have a great day!" to Arpita.
+
+**Solution**: `OWNER_JID` gate in `handleMessage()`. Only messages from the designated US number get LLM responses. Everyone else is silently ingested. Hardened default: deny-all when no owner configured.
+
+---
+
+## Memory Statistics
+
+| Category | Count |
+|----------|-------|
 | WhatsApp | ~1,700 |
-| iMessages | ~240+ |
 | Email (Gmail) | ~1,300 |
 | Browser History | ~2,000 |
 | Contacts | ~908 |
-| Screen OCR | ~1,100 |
-| Calendar | ~15 |
+| Screen OCR | ~1,100+ |
+| iMessages | ~240+ |
 | Notes | ~25 |
+| Calendar | ~15 |
 | Manual / Location | ~50 |
 | **Total** | **~12,000+** |
 
 ---
 
-## Known Issues & Limitations
+## Known Issues
 
-| Issue | Status | Notes |
-|-------|--------|-------|
-| Instagram ingest | ❌ Broken | JSON file corrupted at line 356333 |
-| Calendar June queries | ⚠️ Partial | Month-aware filtering needed |
-| "What has mom been texting" | ⚠️ Wrong | Returns openclaw group, not Maa's personal chats |
-| MX130 TTS GPU | ❌ Won't fix | Maxwell incompatible |
-| Occasional server deadlock | ⚠️ Managed | 5-min watchdog auto-recovers |
-| WhatsApp Baileys ToS risk | ⚠️ Known | Unofficial API, could be blocked |
-| SSL cert manual install | ⚠️ Workaround | Self-signed, needs per-device install |
-
----
-
-## Future Scope
-
-### Immediate (Next Few Sessions)
-- Fix Instagram ingest (re-download or robust JSON parsing)
-- Fix calendar month-aware queries
-- Fix Maa WhatsApp source filter
-- Tailscale HTTPS for fully-trusted cert (no manual install)
-
-### Short-Term
-- **Audio diary**: Process vesper_audio.py recordings → tagged memories by context
-- **Proactive memory**: Vesper surfaces relevant memories unprompted ("You have a meeting in 30 min")
-- **Arpita birthday note**: Format raw birthday data through LLM → natural language
-- **Multi-turn voice on kiosk**: Keep conversation context across multiple exchanges
-- **Better activity queries**: More accurate "what have I been working on" using recent screen data
-
-### Long-Term Vision
-- **Upgrade hardware**: GTX 1650+ GPU → Kokoro TTS on GPU, Whisper medium on GPU → <1s latency
-- **Local document RAG**: PDFs, books, notes → searchable via Vesper
-- **Relationship graphs**: Who do you talk to most? Who's drifting away?
-- **Health integration**: Sleep, steps, location patterns
-- **Predictive memory**: "You usually order food on Thursdays when you work late"
-- **Multi-user support**: Shared Vesper for household
-- **iOS/Android native app**: Better wake word, background listening
-- **Emotional context**: Track mood patterns from message sentiment over time
+| Issue | Status |
+|-------|--------|
+| Instagram ingest | ❌ Broken — JSON export corrupted at line 356333 |
+| Calendar month-specific queries | ⚠️ Partial — needs month-aware timestamp filter |
+| MX130 GPU TTS | ❌ Won't fix — Maxwell incompatible with cuDNN |
+| WhatsApp Baileys ToS | ⚠️ Known risk — unofficial API |
+| SSL cert manual install | ⚠️ Workaround — self-signed, per-device install needed |
 
 ---
 
 ## Security & Privacy
 
-- All data stays on your home network (LAN 10.0.0.120)
+- All data stays on your home LAN. Zero cloud.
 - HTTPS with self-signed cert (Tailscale-trusted cert in progress)
-- ChromaDB data stored on local HDD at `/mnt/hdd/vesper_memory/`
-- No telemetry, no cloud storage, no third-party APIs except:
-  - wttr.in (weather, anonymous)
-  - DuckDuckGo search (for web queries, anonymous)
-  - Google (Web Speech API wake word detection — only the trigger word, not your query)
-  - WhatsApp (messages routed through Meta's servers — this is a known tradeoff)
+- ChromaDB data stored locally at `/mnt/hdd/vesper_memory/`
+- No telemetry, no external AI APIs
+- Only external calls: wttr.in weather (anonymous), DuckDuckGo search (anonymous), Google Web Speech API for wake word detection only (not your query), WhatsApp (Meta's servers — known tradeoff for convenience)
 
 ---
 
-## Quick Reference
+## Repo Structure
 
-```bash
-# SSH to server
-ssh -i ~/.ssh/vesper_key tanmay@10.0.0.120
-
-# Server status
-curl -sk https://127.0.0.1:5000/health
-
-# Server logs
-tail -f /home/tanmay/vesper/logs/file_receiver.log
-
-# Restart server (graceful)
-kill -15 $(ss -tlnp | grep :5000 | grep -oP 'pid=\K[0-9]+' | head -1)
-sleep 5
-nohup python3 /home/tanmay/vesper/pipelines/file_receiver.py >> /home/tanmay/vesper/logs/file_receiver.log 2>&1 &
-
-# Bot status
-tail -f /home/tanmay/vesper/logs/openclaw.log
-tail -f /home/tanmay/vesper/logs/openclaw_us.log
-
-# Morning briefing test
-python3 /home/tanmay/vesper/pipelines/morning_briefing.py
-
-# Kiosk URL
-https://10.0.0.120:5000/kiosk
-
-# Voice UI URL
-https://10.0.0.120:5000/ui
 ```
+vesper/
+├── client/                    # Mac-side code
+│   ├── vesper_capture.py      # Screen OCR → server
+│   ├── vesper_audio.py        # 24/7 mic recording
+│   ├── vesper_screen.py       # Screen capture helper
+│   ├── vesper_phone.py        # Phone call detection
+│   ├── gmail_realtime.py      # IMAP IDLE email watcher
+│   ├── file_watcher.py        # Export queue watcher
+│   ├── export_*.sh/py         # One-shot data exporters
+│   ├── com.vesper.gmail_realtime.plist   # LaunchAgent
+│   └── frontend/
+│       └── kiosk.html         # Complete kiosk UI (Three.js, SSE, VAD)
+│
+└── server/                    # Server-side code
+    ├── file_receiver.py       # Flask server, ChromaDB, all AI inference (~2,600 lines)
+    ├── morning_briefing.py    # Daily 8 AM WhatsApp summary
+    ├── night_batch.py         # 2 AM audio quality re-run
+    ├── proactive_alerts.py    # Priority message/email push
+    ├── memory_client.py       # HTTP client for ingest scripts
+    ├── ingest_*.py            # Per-source ingest scripts
+    └── openclaw/
+        ├── bot.js             # Indian number WhatsApp bot (Baileys)
+        └── bot_us.js          # US number ingest bot
+```
+
+---
+
+## Quick Start (Adapting for Your Own Use)
+
+This is a personal system built around specific hardware and data sources. To adapt it:
+
+1. **Server**: Any Linux machine with 8+ GB RAM and an Nvidia GPU (sm_6.0+ recommended). Install Ollama, pull `nomic-embed-text` and `dolphin-phi`. Run `file_receiver.py`.
+
+2. **Mac client**: macOS required for iMessage/Contacts/Calendar exports. Set `VESPER_URL` to your server IP in each script.
+
+3. **WhatsApp**: Requires a Baileys session (scan QR code). Adjust `OWNER_JID` in `config.json` to your phone number.
+
+4. **Kiosk**: Any device with Chrome. Navigate to `https://<server>:5000/kiosk`. Android with Fully Kiosk Browser for permanent desk display.
+
+---
+
+## Vision
+
+The long-term goal is an AI that knows you better than any cloud product ever could — because it has actually lived alongside you.
+
+With a better GPU and the audio diary pipeline complete, Vesper will have:
+- A complete transcript of everything you said, every call, every meeting — all queryable and private
+- Real-time awareness of your emotional state, work patterns, relationship health
+- Proactive nudges: *"You've been heads-down for 4 hours — Arpita texted"*, *"You have a flight in 3 hours and traffic is bad"*
+- Predictive patterns: *"You usually feel productive after your morning walk"*, *"Your busiest coding days are Tuesdays"*
+- Complete relationship graphs — not just "what did they say" but "how has this relationship evolved over 6 months"
+
+This is what personal AI should be: not a generic assistant trained on everyone's data, but a deeply personal one trained exclusively on yours, running on hardware you own, that grows smarter about you specifically with every passing day.
 
 ---
 
