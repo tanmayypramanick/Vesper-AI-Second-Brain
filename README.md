@@ -8,11 +8,20 @@ Built by **Tanmay Pramanick**. Vesper is a fully self-hosted, always-on personal
 
 ## Kiosk UI
 
-| Home | Memory | System | Settings |
-|------|--------|--------|----------|
-| ![Home](docs/screenshots/home.png) | ![Memory](docs/screenshots/memory.png) | ![System](docs/screenshots/system.png) | ![Settings](docs/screenshots/settings.png) |
-
 *Always-on desk display — OnePlus Nord running Fully Kiosk Browser.*
+
+**Home**
+<img src="docs/screenshots/home.png" width="100%" alt="Vesper Home — Three.js orb, clock, tasks, weather"/>
+
+**Memory**
+<img src="docs/screenshots/memory.png" width="100%" alt="Vesper Memory — ChromaDB breakdown by source"/>
+
+**System**
+<img src="docs/screenshots/system.png" width="100%" alt="Vesper System — live CPU, RAM, GPU, VRAM, temp"/>
+
+**Settings**
+<img src="docs/screenshots/settings1.png" width="100%" alt="Vesper Settings page 1"/>
+<img src="docs/screenshots/settings2.png" width="100%" alt="Vesper Settings page 2"/>
 
 ---
 
@@ -75,7 +84,7 @@ Both were sitting around unused. The server is a **2018 Lenovo** running Ubuntu 
 | Component | Spec |
 |-----------|------|
 | CPU | Intel Core i5-8250U · 4 cores / 8 threads |
-| RAM | 15 GB DDR4 |
+| RAM | 16 GB DDR4 |
 | GPU | NVIDIA MX130 · Maxwell (sm_5.0) · 2 GB VRAM |
 | Storage | External HDD at `/mnt/hdd/` · 657 GB |
 | OS | Ubuntu Linux |
@@ -132,7 +141,7 @@ Every pipeline writes to ChromaDB via `file_receiver.py`. Each memory has `categ
 | Job | Schedule | What it does |
 |-----|----------|-------------|
 | `proactive_alerts.py` | every 30 min | Scans for urgent/unanswered messages → sends WhatsApp push |
-| `morning_briefing.py` | 8 AM daily | Assembles personalised summary → sends to WhatsApp |
+| `morning_briefing.py` | 8 AM daily | Assembles personalized summary → sends to WhatsApp |
 | `night_batch.py` | 2 AM daily | Re-transcribes day's audio with whisper-medium (higher quality) |
 | Watchdog | every 5 min | `curl /health` — if timeout, kills and restarts server |
 | Bot keepalive | every 2 min | `pgrep bot.js || start bot.js` |
@@ -428,7 +437,7 @@ Threading model:
 
 ### `server/morning_briefing.py`
 
-Runs at 8 AM daily. Assembles a personalised WhatsApp message containing: yesterday's screen activity summary, today's calendar events, recent important emails, WhatsApp highlights, top news (DuckDuckGo), weather (wttr.in). Sent via bot.js HTTP API (port 5001).
+Runs at 8 AM daily. Assembles a personalized WhatsApp message containing: yesterday's screen activity summary, today's calendar events, recent important emails, WhatsApp highlights, top news (DuckDuckGo), weather (wttr.in). Sent via bot.js HTTP API (port 5001).
 
 ### `server/night_batch.py`
 
