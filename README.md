@@ -8,6 +8,18 @@ Vesper is a fully private, self-hosted personal AI built by **Tanmay Pramanick**
 
 ---
 
+## Kiosk UI
+
+The kiosk runs 24/7 on an always-on desk display (OnePlus Nord in Fully Kiosk Browser). A Three.js ocean orb, real-time ambient context feed, tasks, clock, weather, and full voice interaction — all in a single HTML file.
+
+| Home | Memory | System | Settings |
+|------|--------|--------|----------|
+| ![Home](docs/screenshots/home.png) | ![Memory](docs/screenshots/memory.png) | ![System](docs/screenshots/system.png) | ![Settings](docs/screenshots/settings.png) |
+
+> *Screenshots from the live kiosk running on the OnePlus Nord. Hard reload required after each deploy.*
+
+---
+
 ## What Can You Ask Vesper?
 
 These are real queries that work right now:

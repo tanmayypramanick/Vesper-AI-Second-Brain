@@ -117,15 +117,26 @@ html,body{width:100%;height:100%;overflow:hidden;background:#020509;color:#fff;
   display:flex;flex-direction:column;gap:2px}
 #tasks-list::-webkit-scrollbar{display:none}
 .t-item{display:flex;align-items:center;gap:8px;padding:7px 0;
-  border-bottom:1px solid rgba(255,255,255,.04)}
-.t-dot{width:4px;height:4px;border-radius:50%;background:var(--state);
+  border-bottom:1px solid rgba(255,255,255,.04);
+  transition:transform .25s ease,opacity .25s ease;touch-action:pan-y;overflow:hidden}
+.t-item.swiping{transition:none}
+.t-item.swipe-out{transform:translateX(-110%);opacity:0}
+.t-dot{width:5px;height:5px;border-radius:50%;background:var(--state);
   flex-shrink:0;transition:background .7s;box-shadow:0 0 6px var(--state)}
 .t-txt{flex:1;min-width:0;font-size:11px;font-weight:300;color:var(--dim);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:.1px}
-.t-rm{background:none;border:none;color:rgba(255,255,255,.38);cursor:pointer;
-  font-size:12px;line-height:1;flex-shrink:0;padding:0 2px;transition:color .15s}
-.t-rm:active{color:var(--red)}
+.t-rm{display:flex;align-items:center;justify-content:center;
+  width:18px;height:18px;border-radius:50%;
+  background:rgba(255,255,255,.07);border:none;
+  color:rgba(255,255,255,.55);cursor:pointer;
+  font-size:13px;line-height:1;flex-shrink:0;padding:0;
+  transition:background .15s,color .15s}
+.t-rm:hover,.t-rm:active{background:rgba(220,60,60,.35);color:#ff6b6b}
 .t-empty{font-size:10px;color:var(--mut);padding:6px 0;font-style:italic;text-align:center}
+.t-clear{background:none;border:none;color:rgba(255,255,255,.2);font-size:9px;
+  cursor:pointer;padding:4px 14px 2px;font-family:'Inter',sans-serif;letter-spacing:.5px;
+  transition:color .15s;text-transform:uppercase;display:block;margin:0 auto}
+.t-clear:active{color:rgba(255,100,100,.7)}
 
 /* Live context feed — no animation to prevent blinking */
 .ctx-sep{height:1px;background:rgba(255,255,255,.04);margin:8px 14px}
@@ -354,7 +365,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#020509;color:#fff;
 <div id="right">
   <div class="r-hdr">
     <span class="r-ttl">Tasks</span>
-    <button class="r-ref" onclick="loadAITasks(true)" title="Refresh">↻</button>
+    <button class="r-ref" onclick="clearAllTasks()" title="Clear all" style="margin-right:4px;font-size:10px;opacity:.5">✕ all</button>
   </div>
   <div id="tasks-list"></div>
   <div class="ctx-sep"></div>
@@ -768,12 +779,7 @@ function _renderCtxFeed(){
   const feed=document.getElementById('ctx-feed');
   const hdr=document.getElementById('ctx-hdr');
   const items=[];
-  (_ambCtx.whatsapp||[]).forEach(s=>{
-    const t=_clean(s);if(t.length>4)items.push({src:'WhatsApp',txt:t,col:'#25d366'});
-  });
-  (_ambCtx.email||[]).forEach(s=>{
-    const t=_clean(s);if(t.length>4)items.push({src:'Email',txt:t,col:'#4285f4'});
-  });
+  // Screen activity only — WhatsApp/email are too noisy and personal for the live feed
   (_ambCtx.screen||[]).forEach(s=>{
     const t=_clean(s);if(t.length>4)items.push({src:'Screen',txt:t,col:'rgba(61,155,255,.7)'});
   });
@@ -781,14 +787,13 @@ function _renderCtxFeed(){
     if(_ctxHash!=='empty'){_ctxHash='empty';feed.innerHTML='<div class="t-empty">—</div>';}
     return;
   }
-  // Skip re-render if content unchanged — prevents blinking
-  const newHash=items.map(x=>x.src+x.txt.slice(0,18)).join('|');
+  const newHash=items.map(x=>x.txt.slice(0,18)).join('|');
   if(newHash===_ctxHash)return;
   _ctxHash=newHash;
-  hdr.textContent='Recent';
-  feed.innerHTML=items.map(({src,txt,col})=>
+  hdr.textContent='Screen Activity';
+  feed.innerHTML=items.map(({txt,col})=>
     `<div class="cx-item">
-      <div class="cx-src" style="color:${col}">${src}</div>
+      <div class="cx-src" style="color:${col}">Screen</div>
       <div class="cx-txt">${txt.slice(0,90)}</div>
     </div>`
   ).join('');
@@ -1007,22 +1012,43 @@ function saveTasks(t){localStorage.setItem('vTasks',JSON.stringify(t));}
 function renderTasks(){
   const tasks=getTasks();
   const el=document.getElementById('tasks-list');
-  if(!tasks.length){el.innerHTML='<div class="t-empty">No tasks yet</div>';return;}
+  if(!tasks.length){el.innerHTML='<div class="t-empty">No tasks — say "add task [thing]"</div>';return;}
   el.innerHTML=tasks.slice(0,12).map(t=>
-    `<div class="t-item">
+    `<div class="t-item" data-id="${t.id}">
       <div class="t-dot"></div>
       <div class="t-txt" title="${t.text}">${t.text}</div>
-      <button class="t-rm" onclick="rmTask('${t.id}')">×</button>
+      <button class="t-rm" onclick="rmTaskAnim('${t.id}',this)">✕</button>
     </div>`
   ).join('');
+  // Attach swipe-to-dismiss on each item
+  el.querySelectorAll('.t-item').forEach(item=>{
+    let sx=0,dx=0,moving=false;
+    item.addEventListener('touchstart',e=>{sx=e.touches[0].clientX;dx=0;moving=false;},{passive:true});
+    item.addEventListener('touchmove',e=>{
+      dx=e.touches[0].clientX-sx;
+      if(Math.abs(dx)>8){moving=true;item.classList.add('swiping');item.style.transform=`translateX(${Math.min(0,dx)}px)`;item.style.opacity=Math.max(0,1+dx/120);}
+    },{passive:true});
+    item.addEventListener('touchend',()=>{
+      item.classList.remove('swiping');
+      if(moving&&dx<-60){rmTaskAnim(item.dataset.id,item);}
+      else{item.style.transform='';item.style.opacity='';}
+    });
+  });
+}
+function rmTaskAnim(id,el){
+  const item=typeof el==='string'?document.querySelector(`[data-id="${id}"]`):
+    (el.closest?el.closest('.t-item'):el.parentElement);
+  if(item){item.classList.add('swipe-out');setTimeout(()=>{rmTask(id);},240);}
+  else rmTask(id);
 }
 function addTask(text,src){
   if(!text||text.length<2)return;
   const tasks=getTasks();
-  tasks.unshift({id:Date.now().toString(36),text:text.trim(),added:Date.now(),src:src||'ai'});
+  tasks.unshift({id:Date.now().toString(36),text:text.trim(),added:Date.now(),src:src||'manual'});
   saveTasks(tasks.slice(0,20));renderTasks();
 }
 function rmTask(id){saveTasks(getTasks().filter(t=>t.id!==id));renderTasks();}
+function clearAllTasks(){saveTasks([]);renderTasks();}
 function detectTaskFromResp(resp){
   const pats=[
     /(?:added|created|set)[^.!]*(?:task|reminder)[^.!]*[:.]\s*["']?([^"'.!]{4,})/i,
@@ -1280,6 +1306,19 @@ window.addEventListener('load',()=>{
 
   // Clear stale AI-loaded tasks from previous sessions
   (function(){const t=getTasks().filter(x=>x.src!=='ai');saveTasks(t);localStorage.removeItem('tCache');})();
+
+  // Seed demo tasks on first load (only if list is empty after cleanup)
+  (function(){
+    if(getTasks().length===0){
+      const demo=[
+        {id:'d1',text:'Reply to Arpita — weekend plans',added:Date.now()-3600000,src:'manual'},
+        {id:'d2',text:'Push Vesper to GitHub',added:Date.now()-7200000,src:'manual'},
+        {id:'d3',text:'Review pull request — auth module',added:Date.now()-10800000,src:'manual'},
+        {id:'d4',text:'Call dentist — reschedule Tuesday',added:Date.now()-86400000,src:'manual'},
+      ];
+      saveTasks(demo);
+    }
+  })();
 
   loadWeather();
   renderTasks();
